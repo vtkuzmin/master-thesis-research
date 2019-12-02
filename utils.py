@@ -10,6 +10,14 @@ from torchvision.utils import save_image
 import numpy as np
 from scipy.stats.stats import pearsonr   
 
+import matplotlib.pyplot as plt
+from IPython import display
+
+
+def to_img(x):
+    x = x.view(x.size(0), 1, 28, 28)
+    return x
+
 
 class Autoencoder(nn.Module):
     ''' 
@@ -195,7 +203,7 @@ def train_binary_model(boolean_function, criterion, optimizer, train_loder, test
 
             if test_loss[-1] < best_test_loss:
                 best_test_loss = test_loss[-1]
-                torch.save(model.state_dict(), f"./{save_name}.pth")
+                torch.save(boolean_function.state_dict(), f"./{save_name}.pth")
 
     except KeyboardInterrupt:
         pass    
@@ -277,7 +285,7 @@ def train_cont_model(continuous_function, criterion, optimizer, train_loder, tes
 
             if test_loss[-1] < best_test_loss:
                 best_test_loss = test_loss[-1]
-                torch.save(model.state_dict(), f"./{save_name}.pth")
+                torch.save(continuous_function.state_dict(), f"./{save_name}.pth")
 
     except KeyboardInterrupt:
         pass
@@ -374,7 +382,7 @@ def train_param_model(parametric_function, criterion, optimizer, train_loder, te
 
             if test_loss[-1] < best_test_loss:
                 best_test_loss = test_loss[-1]
-                torch.save(model.state_dict(), f"./{save_name}.pth")
+                torch.save(parametric_function.state_dict(), f"./{save_name}.pth")
 
     except KeyboardInterrupt:
         pass
@@ -482,7 +490,7 @@ def train_param_model2(parametric_function, criterion, optimizer, train_loder, t
 
             if test_loss[-1] < best_test_loss:
                 best_test_loss = test_loss[-1]
-                torch.save(model.state_dict(), f"./{save_name}.pth")
+                torch.save(parametric_function.state_dict(), f"./{save_name}.pth")
 
     except KeyboardInterrupt:
         pass
@@ -515,7 +523,7 @@ def train_param_model3(parametric_function, criterion, optimizer, train_loder, t
             train_loss_per_epoch = [] 
             test_loss_per_epoch = []
 
-            for data in dataloader:
+            for data in train_loder:
                 img, label = data
                 img = img.view(img.size(0), -1)
 
@@ -586,7 +594,7 @@ def train_param_model3(parametric_function, criterion, optimizer, train_loder, t
 
             if test_loss[-1] < best_test_loss:
                 best_test_loss = test_loss[-1]
-                torch.save(model.state_dict(), f"./{save_name}.pth")
+                torch.save(parametric_function.state_dict(), f"./{save_name}.pth")
 
     except KeyboardInterrupt:
         pass
