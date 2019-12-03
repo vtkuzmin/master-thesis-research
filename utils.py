@@ -112,7 +112,99 @@ def train_autoencoder(model, criterion, optimizer, train_loder, test_loader, num
             
     except KeyboardInterrupt:
         pass
+
     
+class Binary_func_ideal(nn.Module):
+    def __init__(self, unput_dim):
+        super().__init__()
+        
+        self.net = nn.Sequential(
+            nn.Linear(unput_dim, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 2))
+
+    def forward(self, x):
+        x = self.net(x)
+        return x
+    
+    
+def train_ideal_binary_model(boolean_function, criterion, optimizer, 
+                             train_loder, test_loader, save_name, num_epochs=60):
+    train_loss = []
+    test_loss = []
+    best_test_loss = np.inf
+    try:
+        for epoch in range(num_epochs):
+            train_loss_per_epoch = [] 
+            test_loss_per_epoch = []
+            correct = 0
+            total = 0
+            for data in train_loder:
+                img, label = data
+                boolean_mask = label.numpy()%2==0
+                boolean_mask = torch.Tensor(boolean_mask.astype(int)).long()
+
+                img = img.view(img.size(0), -1)
+
+                output = boolean_function(img)
+
+                loss = criterion(output, boolean_mask)
+                train_loss_per_epoch.append(loss.item())
+
+                _, predicted = torch.max(output.data, 1)
+                total += boolean_mask.size(0)
+                correct += (predicted == boolean_mask).sum().item()
+
+                # ===================backward====================
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            train_loss.append(np.mean(train_loss_per_epoch))
+
+            with torch.no_grad():
+                test_correct = 0
+                test_total = 0
+                for data in test_loader:
+                    img, label = data
+                    boolean_mask = label.numpy()%2==0
+                    boolean_mask = torch.Tensor(boolean_mask.astype(int)).long()
+
+                    img = img.view(img.size(0), -1)
+                    output = boolean_function(img)
+
+                    loss = criterion(output, boolean_mask)
+                    test_loss_per_epoch.append(loss.item())
+
+                    _, predicted = torch.max(output.data, 1)
+                    test_total += boolean_mask.size(0)
+                    test_correct += (predicted == boolean_mask).sum().item()
+
+                test_loss.append(np.mean(test_loss_per_epoch))
+            # ===================log========================
+            display.clear_output(wait=True)
+            plt.figure(figsize=(8, 6))
+
+            plt.title("loss")
+            plt.xlabel("number of epoch")
+            plt.ylabel("loss")
+            plt.plot(train_loss, 'b', label = "Train data")
+            plt.plot(test_loss, 'r', label = "Test data")
+            plt.legend()
+            plt.show()
+
+            print('epoch [{}/{}], train loss:{:.4f}, train acc:{:.4f}, test loss:{:.4f}, test acc:{:.4f}, best_test_loss :{:.4f}'
+                  .format(epoch + 1, num_epochs, np.mean(train_loss_per_epoch), 100 * correct / total,
+                          np.mean(test_loss_per_epoch), 100 * test_correct / test_total, best_test_loss))
+
+            if test_loss[-1] < best_test_loss:
+                best_test_loss = test_loss[-1]
+                torch.save(boolean_function.state_dict(), f"./{save_name}.pth")
+
+    except KeyboardInterrupt:
+        pass    
+
+
     
 class Binary_func(nn.Module):
     def __init__(self, latent_dim):
@@ -292,11 +384,11 @@ def train_cont_model(continuous_function, criterion, optimizer, train_loder, tes
     
     
 class Params_func(nn.Module):
-    def __init__(self, img_dim, latent_dim=64):
+    def __init__(self, param_dim, latent_dim=64):
         super().__init__()
-        self.img_dim = img_dim
+        self.param_dim = param_dim
         self.net = nn.Sequential(
-            nn.Linear(latent_dim+self.img_dim, 256),
+            nn.Linear(latent_dim+self.param_dim, 256),
             nn.ReLU(True),
             nn.Linear(256, 1),
             nn.ReLU(True))
@@ -307,7 +399,26 @@ class Params_func(nn.Module):
         return output
     
     
-    
+class Params_func_hard(nn.Module):
+    def __init__(self, input_param_dim, param_dim, latent_dim=64):
+        super().__init__()
+        self.param_dim = param_dim
+        
+        self.encode = nn.Linear(input_param_dim, self.param_dim)
+        
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim+self.param_dim, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 1),
+            nn.ReLU(True))
+
+    def forward(self, x, p):
+        p = self.encode(p)
+        input_x = torch.cat([x, p], dim=1)
+        output = self.net(input_x)
+        return output
+
+
 def train_param_model(parametric_function, criterion, optimizer, train_loder, test_loader, model, save_name, num_epochs=100):
     train_loss = []
     test_loss = []
@@ -387,6 +498,87 @@ def train_param_model(parametric_function, criterion, optimizer, train_loder, te
     except KeyboardInterrupt:
         pass
     
+
+def train_simple_param_model(parametric_function, criterion, optimizer, 
+                             train_loder, test_loader, model, save_name, num_epochs=100):
+    train_loss = []
+    test_loss = []
+    best_test_loss = np.inf
+    try:
+        for epoch in range(num_epochs):
+            train_loss_per_epoch = [] 
+            test_loss_per_epoch = []
+
+            for data in train_loder:
+                img, label = data
+                ps = torch.zeros((img.shape[0], 1))
+                target = []
+                for i in range(img.shape[0]):
+                    idx = np.random.randint(0, 28)
+                    target.append(torch.sum(img[i, 0, idx]))
+                    ps[i] = idx
+                target = torch.stack(target).unsqueeze(1)
+
+                img = img.view(img.size(0), -1)
+
+                with torch.no_grad():
+                    encodding = model.encoder(img)
+
+                output = parametric_function(encodding, ps)
+
+                loss = criterion(output, target)
+                train_loss_per_epoch.append(loss.item())
+
+                # ===================backward====================
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            train_loss.append(np.mean(train_loss_per_epoch))
+
+            with torch.no_grad():
+                for data in test_loader:
+                    img, label = data
+                    ps = torch.zeros((img.shape[0], 1))
+                    target = []
+                    for i in range(img.shape[0]):
+                        idx = np.random.randint(0, 28)
+                        target.append(torch.sum(img[i, 0, idx]))
+                        ps[i] = idx
+                    target = torch.stack(target).unsqueeze(1)
+
+                    img = img.view(img.size(0), -1)
+
+                    encodding = model.encoder(img)
+                    output = parametric_function(encodding, ps)
+
+                    loss = criterion(output, target)
+                    test_loss_per_epoch.append(loss.item())
+
+                test_loss.append(np.mean(test_loss_per_epoch))
+            # ===================log========================
+            display.clear_output(wait=True)
+            plt.figure(figsize=(8, 6))
+
+            plt.title("loss")
+            plt.xlabel("number of epoch")
+            plt.ylabel("loss")
+            plt.plot(train_loss, 'b', label = "Train data")
+            plt.plot(test_loss, 'r', label = "Test data")
+            plt.legend()
+            plt.show()
+
+            print('epoch [{}/{}], train loss:{:.4f}, test loss:{:.4f}, best test loss:{:.4f}'
+                  .format(epoch + 1, num_epochs, np.mean(train_loss_per_epoch), np.mean(test_loss_per_epoch),
+                         best_test_loss))
+
+            if test_loss[-1] < best_test_loss:
+                best_test_loss = test_loss[-1]
+                torch.save(parametric_function.state_dict(), f"./{save_name}.pth")
+
+    except KeyboardInterrupt:
+        pass
+    
     
 
 class Params_func2(nn.Module):
@@ -394,9 +586,11 @@ class Params_func2(nn.Module):
         super().__init__()
         self.img_dim = img_dim
         self.net = nn.Sequential(
-            nn.Linear(128+2*28, 512),
+            nn.Linear(64+2*20, 1024),
             nn.ReLU(True),
-            nn.Linear(512, 1),
+            nn.Linear(1024, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 1),
             nn.Sigmoid())
 
     def forward(self, x, p):
@@ -417,15 +611,15 @@ def train_param_model2(parametric_function, criterion, optimizer, train_loder, t
 
             for data in train_loder:
                 img, label = data
-                p_x = torch.zeros((img.shape[0], 28))
-                p_y = torch.zeros((img.shape[0], 28))
+                p_x = torch.zeros((img.shape[0], 20))
+                p_y = torch.zeros((img.shape[0], 20))
                 target = []
                 for i in range(img.shape[0]):
-                    id_x = np.random.randint(0, 28)
-                    id_y = np.random.randint(0, 28)
+                    id_x = np.random.randint(4, 24)
+                    id_y = np.random.randint(4, 24)
                     target.append(img[i, 0, id_x, id_y])
-                    p_x[i][id_x] = 1.
-                    p_y[i][id_y] = 1.
+                    p_x[i][id_x-4] = 1.
+                    p_y[i][id_y-4] = 1.
 
                 ps = torch.cat([p_x, p_y], dim=1)
                 target = torch.stack(target).unsqueeze(1)
@@ -450,15 +644,15 @@ def train_param_model2(parametric_function, criterion, optimizer, train_loder, t
             with torch.no_grad():
                 for data in test_loader:
                     img, label = data
-                    p_x = torch.zeros((img.shape[0], 28))
-                    p_y = torch.zeros((img.shape[0], 28))
+                    p_x = torch.zeros((img.shape[0], 20))
+                    p_y = torch.zeros((img.shape[0], 20))
                     target = []
                     for i in range(img.shape[0]):
-                        id_x = np.random.randint(0, 28)
-                        id_y = np.random.randint(0, 28)
+                        id_x = np.random.randint(4, 24)
+                        id_y = np.random.randint(4, 24)
                         target.append(img[i, 0, id_x, id_y])
-                        p_x[i][id_x] = 1.
-                        p_y[i][id_y] = 1.
+                        p_x[i][id_x-4] = 1.
+                        p_y[i][id_y-4] = 1.
 
                     ps = torch.cat([p_x, p_y], dim=1)
                     target = torch.stack(target).unsqueeze(1)
